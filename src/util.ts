@@ -1,11 +1,9 @@
-var Promise = require('./Promise');
-
 /**
  * Resolve a promise after a delay
  * @param {number} delay    A delay in milliseconds
  * @returns {Promise} Resolves after given delay
  */
-export function wait(delay) {
+export function wait(delay: number) {
   return new Promise(function (resolve) {
     setTimeout(resolve, delay);
   });
@@ -17,10 +15,10 @@ export function wait(delay) {
  * @param {number} times
  * @return {Promise}
  */
-export function repeat(fn, times) {
+export function repeat(fn: ()=>Promise<any>, times: number) {
   return new Promise(function (resolve, reject) {
     var count = 0;
-    var results = [];
+    var results: any = [];
 
     function recurse() {
       if (count < times) {
@@ -45,8 +43,8 @@ export function repeat(fn, times) {
  * @param {function} callback    A callback returning a Promise
  * @returns {Promise}
  */
-export function whilst(condition, callback) {
-  return new Promise(function (resolve, reject) {
+export function whilst(condition: ()=>boolean, callback: ()=>Promise<void>) {
+  return new Promise<void>(function (resolve, reject) {
     function recurse() {
       if (condition()) {
         callback().then(() => recurse());

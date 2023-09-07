@@ -1,26 +1,26 @@
 // basic statistical functions
 
-export function compare (a, b) {
+export function compare (a: number, b: number) {
   return a > b ? 1 : a < b ? -1 : 0;
 }
 
-export function add (a, b) {
+export function add (a: number, b: number) {
   return a + b;
 }
 
-export function sum (arr) {
+export function sum (arr: Array<number>) {
   return arr.reduce(add);
 }
 
-export function mean (arr) {
+export function mean (arr: Array<number>) {
   return sum(arr) / arr.length;
 }
 
-export function std (arr) {
+export function std (arr: Array<number>) {
   return Math.sqrt(variance(arr));
 }
 
-export function variance (arr) {
+export function variance (arr: Array<number>) {
   if (arr.length < 2) return 0;
 
   var _mean = mean(arr);
@@ -29,7 +29,7 @@ export function variance (arr) {
           .reduce(add) / (arr.length - 1);
 }
 
-export function median (arr) {
+export function median (arr: Array<number>) {
   if (arr.length < 2) return arr[0];
 
   var sorted = arr.slice().sort(compare);

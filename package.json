@@ -1,12 +1,13 @@
 {
-  "name": "timesync",
-  "version": "1.0.12",
+  "name": "@crossan007/timesync",
+  "version": "3.0.0",
   "description": "Time synchronization between peers",
-  "author": "Jos de Jong <wjosdejong@gmail.com> (https://github.com/josdejong)",
-  "main": "./lib/timesync.js",
-  "browser": "./dist/timesync.min.js",
-  "react-native": "./dist/timesync.min.js",
-  "types": "./typings.d.ts",
+  "contributors": [
+    "Charles Crossan <crossan007@gmail.com> (https://github.com/crossan007)",
+    "Jos de Jong <wjosdejong@gmail.com> (https://github.com/josdejong)"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "license": "MIT",
   "keywords": [
     "time",
@@ -21,35 +22,15 @@
     "url": "git://github.com/enmasseio/timesync.git"
   },
   "dependencies": {
+    "@types/node": "^20.5.9",
     "debug": "^4.3.4"
   },
   "devDependencies": {
-    "@babel/cli": "7.18.10",
-    "@babel/core": "7.18.13",
-    "@babel/preset-env": "7.18.10",
-    "babel-cli": "6.26.0",
-    "babelify": "10.0.0",
-    "body-parser": "1.20.0",
-    "browserify": "17.0.0",
-    "express": "4.18.1",
-    "mkdirp": "1.0.4",
-    "promise": "8.2.0",
-    "socket.io": "4.5.2",
-    "uglify-js": "3.17.0",
-    "watch": "1.0.2"
+    "typescript": "^5.2.2"
   },
   "scripts": {
-    "bundle": "mkdirp dist && browserify src/timesync.js -t babelify -s timesync -o dist/timesync.js --bare",
-    "minify": "uglifyjs dist/timesync.js -o dist/timesync.min.js",
-    "compile": "babel src --out-dir lib",
-    "build": "npm run bundle && npm run minify && npm run compile",
-    "watch": "watch \"npm run build\" src",
-    "prepublishOnly": "npm run build"
-  },
-  "browserify": {
-    "transform": [
-      "babelify"
-    ]
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "files": [
     "dist",
