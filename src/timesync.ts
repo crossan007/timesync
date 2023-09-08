@@ -7,6 +7,7 @@
  */
 
 import { Emitter } from "./emitter";
+import { JSONRPC, JSONRPCMessage, RPCRequest, RPCResponse } from "./rpc";
 import { mean, median, std } from "./stat";
 import { wait } from "./util";
 
@@ -15,35 +16,20 @@ type eventCallback =
   | ((event: "error", callback: (err: any) => void) => void)
   | ((event: "sync", callback: (value: "start" | "end") => void) => void);
 
-
-interface jsonrpc {
-  jsonrpc: "2.0";
-  id: number;
-}
-
-export interface TimeSyncRequest extends jsonrpc {
-  method: string;
-  params: Record<string, string>;
-}
-
-export interface TimeSyncResponse extends jsonrpc {
-  result: number;
-}
-
 type PeerOffset = {
-  roundtrip: number,
-  offset: number,
-}
+  roundtrip: number;
+  offset: number;
+};
 
 export interface TimeSyncOptions {
   /**  interval for doing synchronizations in ms. Set to null to disable auto sync */
   interval: number;
-  /** timeout for requests to fail in ms */
-  timeout: number;
   /** delay between requests in ms */
   delay: number;
   /** number of times to do a request to one peer */
   repeat: number;
+  /** timeout for requests to fail in ms */
+  timeout: number;
   /** uri's or id's of the peers */
   peers: string[]; // Change this line to use an array of strings
   /** uri of a single server (master/slave configuration) */
@@ -52,12 +38,12 @@ export interface TimeSyncOptions {
   now: () => number;
 }
 
-export abstract class TimeSync extends Emitter {
+export abstract class TimeSync extends JSONRPC {
   /** The current offset from system time  in ms*/
   public offset: number = 0;
   private options: TimeSyncOptions;
   /** @type {number} Contains the timeout for the next synchronization */
-  private _timeout?: NodeJS.Timer ;
+  private syncTimer?: NodeJS.Timer;
 
   /** Contains a map with requests in progress */
   private _inProgress: Record<string, (data: any) => void> = {};
@@ -69,22 +55,24 @@ export abstract class TimeSync extends Emitter {
    */
   private _isFirst = true;
 
-  private _nextId: number = 0;
+  constructor(
+    options: Partial<
+      TimeSyncOptions & {
+        /** uri's or id's of the peers */
+        peers: string;
+      }
+    >
+  ) {
+    super(options.timeout || 1000);
 
-  private nextId(): number {
-    return this._nextId++;
-  }
-
-  constructor(options: Partial<TimeSyncOptions & { peers: string }>) {
-    super();
     this.options = {
       interval: 60 * 60 * 1000,
-      timeout: 10000,
       delay: 1000,
       repeat: 5,
       server: null,
-      now: ()=> Date.now(),
+      now: () => Date.now(),
       peers: [],
+      timeout: options.timeout || 1000,
     };
 
     // apply provided options
@@ -115,7 +103,7 @@ export abstract class TimeSync extends Emitter {
 
     if (this.options.interval !== null) {
       // start an interval to automatically run a synchronization once per interval
-      this._timeout = setInterval(this.sync.bind(this), this.options.interval);
+      this.syncTimer = setInterval(this.sync.bind(this), this.options.interval);
 
       // synchronize immediately on the next tick (allows to attach event
       // handlers before the timesync starts).
@@ -126,94 +114,21 @@ export abstract class TimeSync extends Emitter {
   }
 
   /**
-   * Send a message to a peer
-   *
-   * @param {string} to
-   * @param {*} data
-   */
-  private async send(
-    to: string,
-    data: TimeSyncRequest | TimeSyncResponse,
-    timeout: number
-  ): Promise<void> {
-    let r: TimeSyncResponse;
-    r = await this._send(to, data, timeout);
-    this.receive(to, r);
-  }
-
-  protected abstract _send(
-    to: string,
-    data: TimeSyncRequest | TimeSyncResponse,
-    timeout: number
-  ): Promise<TimeSyncResponse>;
-
-  /**
    * Receive method to be called when a reply comes in
    * @param {string | undefined} [from]
    * @param {*} data
    */
-  public receive(from: string, data: TimeSyncRequest | TimeSyncResponse): void {
-    if (data && "result" in data && data.id in this._inProgress) {
-      // this is a reply
-      this._inProgress[data.id](data.result);
-    } else if (data && "method" in data && data.id !== undefined) {
-      // this is a request from an other peer
-      // reply with our current time
-      this.send(
-        from,
-        {
-          jsonrpc: "2.0",
-          id: data.id,
-          result: this.options.now(),
-        },
-        this.options.timeout
-      );
+  public receive(from: string, data: RPCRequest | RPCResponse): void {
+    if (!(data && "method" in data && data.id !== undefined)) {
+      throw new Error("bad receive");
     }
-  }
-
-  _handleRPCSendError(id: number, reject:(reason?: any) => void, err: any) {
-    delete this._inProgress[id];
-    reject(new Error("Send failure"));
-  }
-
-  /**
-   * Send a JSON-RPC message and retrieve a response
-   * @param {string} to
-   * @param {string} method
-   * @param {*} [params]
-   * @returns {Promise}
-   */
-  async rpc<T>(to: string, method: string, params: Record<string, string> = {}) {
-    let id = this.nextId();
-    let resolve: (value: T | PromiseLike<T>) => void;
-    let reject!: (reason?: any) => void;
-
-    var deferred = new Promise<T>((res, rej) => {
-      resolve = res;
-      reject = rej;
+    // this is a request from an other peer
+    // reply with our current time
+    this.send(from, {
+      jsonrpc: "2.0",
+      id: data.id,
+      result: this.options.now()
     });
-
-    this._inProgress[id] = (data) => {
-      delete this._inProgress[id];
-      resolve(data);
-    };
-
-    try {
-      this.send(
-        to,
-        {
-          jsonrpc: "2.0",
-          id: id,
-          method: method,
-          params: params,
-        },
-        this.options.timeout
-      );
-    } catch (err: any) {
-      this._handleRPCSendError(id, reject, err);
-    }
-
-    return deferred;
   }
 
   /**
@@ -226,9 +141,7 @@ export abstract class TimeSync extends Emitter {
     const peers = this.options.server
       ? [this.options.server]
       : [...this.options.peers];
-    const all = await Promise.all(
-      peers.map((peer) => this.syncWithPeer(peer))
-    );
+    const all = await Promise.all(peers.map((peer) => this.syncWithPeer(peer)));
 
     const offsets = all.filter(
       (offset) =>
@@ -257,15 +170,17 @@ export abstract class TimeSync extends Emitter {
     // retrieve the offset of a peer, then wait 1 sec
     let all: Promise<PeerOffset | null>[] = [];
 
-    all.push(this.getPeerOffset(peer))
+    all.push(this.getPeerOffset(peer));
 
-    while(all.length < this.options.repeat){
-      await wait(this.options.delay)
-      all.push(this.getPeerOffset(peer))
+    while (all.length < this.options.repeat) {
+      await wait(this.options.delay);
+      all.push(this.getPeerOffset(peer));
     }
-      
+
     // filter out null results
-    var results = (await Promise.all(all)).filter((result) => result !== null) as PeerOffset[];
+    var results = (await Promise.all(all)).filter(
+      (result) => result !== null
+    ) as PeerOffset[];
 
     // calculate the limit for outliers
     var roundtrips = results.map((result) => result.roundtrip);
@@ -277,7 +192,6 @@ export abstract class TimeSync extends Emitter {
 
     // return the new offset
     return offsets.length > 0 ? mean(offsets) : null;
-  
   }
 
   /**
@@ -290,7 +204,7 @@ export abstract class TimeSync extends Emitter {
     var start = this.options.now(); // local system time
 
     try {
-      const timestamp = (await this.rpc<TimeSyncResponse>(peer, "timesync"));
+      const timestamp = await this.rpc(peer, "timesync")
       if (typeof timestamp != "number") {
         throw new Error(`Invalid result recieved: ${timestamp}`);
       }
@@ -310,7 +224,7 @@ export abstract class TimeSync extends Emitter {
         offset: offset,
       };
     } catch (err: any) {
-      this.emitError(err?.message || "Error in getPeerOffset")
+      this.emitError(err?.message || "Error in getPeerOffset");
       return null;
     }
   }
@@ -329,8 +243,8 @@ export abstract class TimeSync extends Emitter {
    * synchronization will be finished first.
    */
   destroy() {
-    if (typeof this._timeout == "number") {
-      clearTimeout(this._timeout);
+    if (typeof this.syncTimer == "number") {
+      clearTimeout(this.syncTimer);
     }
   }
 }
