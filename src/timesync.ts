@@ -7,14 +7,14 @@
  */
 
 import { Emitter } from "./emitter";
-import { JSONRPC, JSONRPCMessage, RPCRequest, RPCResponse } from "./rpc";
+import { JSONRPC, RPCRequest, RPCResponse } from "./rpc";
 import { mean, median, std } from "./stat";
 import { wait } from "./util";
 
 type eventCallback =
   | ((event: "change", callback: (offset: number) => void) => void)
   | ((event: "error", callback: (err: any) => void) => void)
-  | ((event: "sync", callback: (value: "start" | "end") => void) => void);
+  | ((event: "sync", callback: (value: "start" | "complete") => void) => void);
 
 type PeerOffset = {
   roundtrip: number;
@@ -118,13 +118,13 @@ export abstract class TimeSync extends JSONRPC {
    * @param {string | undefined} [from]
    * @param {*} data
    */
-  public receive(from: string, data: RPCRequest | RPCResponse): void {
+  public async receive(from: string, data: RPCRequest | RPCResponse): Promise<void> {
     if (!(data && "method" in data && data.id !== undefined)) {
       throw new Error("bad receive");
     }
     // this is a request from an other peer
     // reply with our current time
-    this.send(from, {
+    await this.send(from, {
       jsonrpc: "2.0",
       id: data.id,
       result: this.options.now()
@@ -141,22 +141,30 @@ export abstract class TimeSync extends JSONRPC {
     const peers = this.options.server
       ? [this.options.server]
       : [...this.options.peers];
-    const all = await Promise.all(peers.map((peer) => this.syncWithPeer(peer)));
+    
+    try {
+      const all = await Promise.all(peers.map((peer) => this.syncWithPeer(peer)));
 
-    const offsets = all.filter(
-      (offset) =>
-        typeof offset === "number" &&
-        offset !== null &&
-        !isNaN(offset) &&
-        isFinite(offset)
-    ) as number[];
+      const offsets = all.filter(
+        (offset) =>
+          typeof offset === "number" &&
+          offset !== null &&
+          !isNaN(offset) &&
+          isFinite(offset)
+      ) as number[];
 
-    if (offsets.length > 0) {
-      // take the average of all peers (excluding self) as new offset
-      this.offset = mean(offsets);
-      this.emit("change", this.offset);
+      if (offsets.length > 0) {
+        // take the average of all peers (excluding self) as new offset
+        this.offset = mean(offsets);
+        this.emit("change", this.offset);
+      }
     }
-    this.emit("sync", "end");
+    catch (err: any){
+      this.emitError(`Error in sync ${typeof err?.message == "string" ? err.message : err}`)
+    }
+    this.emit("sync", "complete");
+    
+    
   }
 
   /**
@@ -177,21 +185,28 @@ export abstract class TimeSync extends JSONRPC {
       all.push(this.getPeerOffset(peer));
     }
 
-    // filter out null results
-    var results = (await Promise.all(all)).filter(
-      (result) => result !== null
-    ) as PeerOffset[];
+    try {
+      // filter out null results
+      var results = (await Promise.all(all)).filter(
+        (result) => result !== null
+      ) as PeerOffset[];
+      
 
-    // calculate the limit for outliers
-    var roundtrips = results.map((result) => result.roundtrip);
-    var limit = median(roundtrips) + std(roundtrips);
+      // calculate the limit for outliers
+      var roundtrips = results.map((result) => result.roundtrip);
+      var limit = median(roundtrips) + std(roundtrips);
 
-    // filter all results which have a roundtrip smaller than the mean+std
-    var filtered = results.filter((result) => result.roundtrip < limit);
-    var offsets = filtered.map((result) => result.offset);
+      // filter all results which have a roundtrip smaller than the mean+std
+      var filtered = results.filter((result) => result.roundtrip < limit);
+      var offsets = filtered.map((result) => result.offset);
 
-    // return the new offset
-    return offsets.length > 0 ? mean(offsets) : null;
+      // return the new offset
+      return offsets.length > 0 ? mean(offsets) : null;
+    }
+    catch(err: any){
+      this.emitError(`Error in syncWithPeer ${typeof err?.message == "string" ? err.message : err}`)
+      return null;
+    }
   }
 
   /**

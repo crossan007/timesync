@@ -1,6 +1,6 @@
 import { Emitter } from "./emitter";
 
-export interface JSONRPCMessage {
+interface JSONRPCMessage {
   jsonrpc: "2.0";
   id: number;
 }
@@ -40,12 +40,12 @@ export abstract class JSONRPC extends Emitter {
    * @param {string} to
    * @param {*} data
    */
-  protected async send(
+  protected send(
     to: string,
     data: RPCRequest | RPCResponse,
     timeout: number = this.timeout
   ): Promise<RPCResponse> {
-    return await this._send(to, data, timeout);
+    return this._send(to, data, timeout);
   }
 
   /**
@@ -73,7 +73,7 @@ export abstract class JSONRPC extends Emitter {
         this.timeout
       )).result;
     } catch (err: any) {
-      throw new Error(`Failed sending request to ${to}: ${id}`);
+      throw new Error(`Failed sending request to ${to} (${id}): ${typeof err?.message == "string" ? err.message : err}`);
     }
   }
 

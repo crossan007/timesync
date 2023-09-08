@@ -1,6 +1,6 @@
 {
   "name": "@crossan007/timesync",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Time synchronization between peers",
   "contributors": [
     "Charles Crossan <crossan007@gmail.com> (https://github.com/crossan007)",

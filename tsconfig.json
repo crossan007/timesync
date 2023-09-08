@@ -4,6 +4,7 @@
     "target": "es2020",
     "outDir": "./dist",
     "rootDir": "./src",
+    "sourceMap": true,
     "moduleResolution": "node",
     "strict": true,
     "declaration": true,
